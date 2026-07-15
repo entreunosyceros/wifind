@@ -1,0 +1,27 @@
+# Entorno virtual
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Sesiones y exportaciones locales
+*.wifind
+*_assets/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Backup de migración
+wifind_backup/
+_migrar_a_espanol.py
+
+# Informes generados
+informe*.html
