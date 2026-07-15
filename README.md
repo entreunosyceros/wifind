@@ -61,6 +61,8 @@ python run_app.py
 
 ## Uso rápido
 
+<img width="1915" height="1047" alt="intensidad" src="https://github.com/user-attachments/assets/32727c75-151f-42fd-bdc0-242a19ee761c" />
+
 1. Ejecuta `python3 run_app.py`
 2. En **Escáner WiFi** verás las redes detectadas con detalle RF (cifrado, radio, rate, ancho de canal, etc.):
    - Selecciona una red y pulsa **Conectar**, o usa el menú contextual (clic derecho)
@@ -93,6 +95,8 @@ Los mensajes de éxito y error se muestran en **español claro** (p. ej. *Conect
 | **macOS** | `networksetup -setairportnetwork` | `airport -z` |
 
 ### Mapa de calor con paredes
+
+<img width="1920" height="1046" alt="mapa-de-calor" src="https://github.com/user-attachments/assets/d4c2ce44-da53-4c47-88f7-918dd110bb51" />
 
 La interpolación pura (RBF/IDW) asume espacio vacío: entre dos mediciones lejanas genera una rampa suave aunque haya una pared real. WiFind permite simular obstáculos:
 
@@ -182,6 +186,8 @@ Al conectar a una red WPA, puedes marcar **Recordar contraseña** en el diálogo
 Limitaciones: algunas redes usan **aislamiento de clientes** (AP isolation) y ocultan otros equipos; el escaneo puede tardar unos segundos en subredes /24.
 
 ### Atajos de teclado
+
+<img width="1919" height="1047" alt="manuall-usuario" src="https://github.com/user-attachments/assets/679d225f-d284-459b-ace4-46fc45381321" />
 
 | Atajo | Acción |
 |-------|--------|
