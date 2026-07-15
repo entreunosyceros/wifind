@@ -148,6 +148,8 @@ Los mismos campos se incluyen al exportar **Redes escaneadas (CSV)** y en la tab
 
 ### Dispositivos en la red local
 
+<img width="1920" height="1045" alt="dispositivos" src="https://github.com/user-attachments/assets/cade8787-18ef-4512-b237-c796f004a482" />
+
 Cuando estás conectado a una red WiFi con IP asignada:
 
 1. Ve a la pestaña **Dispositivos** o pulsa **Ver dispositivos en la red…** en el escáner
