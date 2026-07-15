@@ -1,5 +1,7 @@
 # WiFind
 
+<img width="1915" height="1046" alt="about-windfind" src="https://github.com/user-attachments/assets/c684781e-c9c5-4af6-b21a-63b585379ebb" />
+
 **WiFind** es una aplicación de escritorio multiplataforma (Windows y Linux) para analizar redes WiFi, monitorizar la intensidad de señal en tiempo real y generar mapas de calor de cobertura sobre planos de planta.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
@@ -7,6 +9,8 @@
 ![Licencia](https://img.shields.io/badge/Licencia-MIT-lightgrey.svg)
 
 ## Características principales
+
+<img width="1922" height="1045" alt="interfaz-wifind" src="https://github.com/user-attachments/assets/80792b0d-e69b-4d46-91be-898ec19a7e22" />
 
 - **Escáner WiFi** — Detección de redes cercanas con señal (dBm, % e indicador de rayas), canal, banda, tipo de acceso (abierta / con clave / 802.1X), cifrado detallado, tipo radio (802.11n/ac/ax), velocidad anunciada, ancho de canal, red oculta y red en uso; panel de conexión activa con IP, gateway, DNS y velocidad real TX/RX
 - **Conexión y desconexión WiFi** — Conectar a redes WPA/WPA2/WPA3 y abiertas desde el escáner; desconectar de la red activa; soporte 802.1X empresarial (PEAP, TTLS, TLS) con certificados; mensajes claros en español (sin salida técnica de `nmcli`/`netsh`)
