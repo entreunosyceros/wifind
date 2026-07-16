@@ -58,8 +58,8 @@ monitorizar la señal en tiempo real y generar mapas de calor de cobertura sobre
   <li><b>IP, Gateway, DNS</b> — configuración IPv4 de la conexión.</li>
   <li>Cifrado, tipo radio, canal, rate anunciada y ancho de canal de la sesión actual.</li>
 </ul>
-<p>En Linux estos datos provienen de <code>nmcli</code> e <code>iw</code>; en Windows de <code>netsh</code> e <code>ipconfig</code>;
-  en macOS de <code>airport -I</code>. No todos los campos están disponibles en todas las plataformas o adaptadores.</p>
+<p>En Linux estos datos provienen de <code>nmcli</code> e <code>iw</code>; en Windows de <code>netsh</code> e <code>ipconfig</code>.
+  No todos los campos están disponibles en todos los adaptadores.</p>
 
 <p>La tabla inferior <b>Puntos de acceso por SSID</b> agrupa varios AP con el mismo nombre de red.</p>
 
@@ -104,9 +104,10 @@ monitorizar la señal en tiempo real y generar mapas de calor de cobertura sobre
 <ul>
   <li>Disponible cuando hay conexión WiFi activa con IP asignada.</li>
   <li><b>Escanear dispositivos</b> explora la LAN (tabla ARP/neighbor y ping a la subred).</li>
-  <li>El <b>diagrama</b> colorea cada tarjeta según su tipo: router, este equipo, ordenador, teléfono, tablet, IoT u otro.</li>
-  <li>La clasificación se infiere del <b>nombre de host</b> (DNS + mDNS) y del prefijo MAC (OUI).</li>
+  <li>El <b>diagrama</b> colorea cada tarjeta según su tipo: router, este equipo, ordenador, Android, teléfono, tablet, Chromecast, cámara, IoT u otro.</li>
+  <li>La clasificación se infiere del <b>nombre de host</b> (DNS + mDNS), del fabricante por MAC (OUI) y, opcionalmente, de puertos clave.</li>
   <li>Los móviles <b>Android</b> suelen anunciarse como <code>Android_…</code> en mDNS; en Linux instala <code>avahi-utils</code>.</li>
+  <li>Puedes ampliar el lookup OUI con <code>~/.config/wifind/oui.csv</code> (formato: <code>AA:BB:CC,Fabricante</code>).</li>
   <li>Cada tarjeta muestra el rol, nombre de host (si se resuelve), IP y dirección MAC.</li>
   <li>La leyenda inferior derecha usa los mismos colores que las tarjetas del diagrama.</li>
   <li>Arrastra el <b>fondo</b> del diagrama para desplazar la vista; arrastra un <b>nodo</b> para reorganizarlo.</li>
@@ -144,6 +145,7 @@ monitorizar la señal en tiempo real y generar mapas de calor de cobertura sobre
   <li>Intervalo de escaneo, umbrales de señal (bueno / aceptable / débil).</li>
   <li>Unidades (metros o pies), carpeta de exportación, tema.</li>
   <li>Parámetros de survey automático (intervalo, paso).</li>
+  <li>Escaneo ligero de puertos LAN (desactivado por defecto) y timeout de sondeo.</li>
 </ul>
 
 <h2>Atajos de teclado</h2>
@@ -159,7 +161,6 @@ monitorizar la señal en tiempo real y generar mapas de calor de cobertura sobre
 <ul>
   <li><b>Linux</b>: NetworkManager (<code>nmcli</code>) o <code>iw</code>. Antenas USB suelen aparecer como <code>wlx…</code>.</li>
   <li><b>Windows</b>: adaptador WiFi activo y servicio WLAN.</li>
-  <li><b>macOS</b>: puede requerir permisos de red local.</li>
   <li>Si no se detectan redes: comprueba que la interfaz WiFi esté activa
       (<code>nmcli device status</code>) y no bloqueada (<code>rfkill unblock wifi</code>).</li>
 </ul>

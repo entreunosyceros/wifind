@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -77,6 +78,14 @@ class DialogoPreferencias(QDialog):
         self.walk_step.setRange(0.1, 10)
         self.walk_step.setValue(prefs.walk_step_m)
         sf.addRow("Paso recorrido (m):", self.walk_step)
+        self.port_scan_enabled = QCheckBox("Clasificación avanzada por puertos (LAN)")
+        self.port_scan_enabled.setChecked(prefs.enable_light_port_scan)
+        sf.addRow(self.port_scan_enabled)
+        self.port_scan_timeout = QSpinBox()
+        self.port_scan_timeout.setRange(100, 2000)
+        self.port_scan_timeout.setSingleStep(50)
+        self.port_scan_timeout.setValue(prefs.light_port_timeout_ms)
+        sf.addRow("Timeout puertos (ms):", self.port_scan_timeout)
         tabs.addTab(scan, "Escaneo")
 
         appearance = QWidget()
@@ -106,5 +115,7 @@ class DialogoPreferencias(QDialog):
         prefs.scan_interval_ms = self.scan_interval.value()
         prefs.survey_interval_sec = self.survey_interval.value()
         prefs.walk_step_m = self.walk_step.value()
+        prefs.enable_light_port_scan = self.port_scan_enabled.isChecked()
+        prefs.light_port_timeout_ms = self.port_scan_timeout.value()
         prefs.theme = self.theme.currentText()
         prefs.save()

@@ -187,6 +187,10 @@ def clasificar_dispositivo(dev: DispositivoRed) -> TipoDispositivo:
     if por_nombre is not None:
         return por_nombre
 
+    por_puertos = _clasificar_por_puertos(dev.puertos_abiertos)
+    if por_puertos is not None:
+        return por_puertos
+
     por_mac = _clasificar_por_mac(dev.mac)
     if por_mac is not None:
         return por_mac
@@ -216,6 +220,19 @@ def _clasificar_por_nombre(dev: DispositivoRed) -> TipoDispositivo | None:
         return TipoDispositivo.IOT
     if _coincide(texto, _PATRONES_PC):
         return TipoDispositivo.PC
+    return None
+
+
+def _clasificar_por_puertos(puertos: list[int]) -> TipoDispositivo | None:
+    ports = set(puertos or [])
+    if not ports:
+        return None
+    if 8008 in ports or 8009 in ports:
+        return TipoDispositivo.CHROMECAST
+    if 554 in ports:
+        return TipoDispositivo.CAMARA
+    if 80 in ports or 443 in ports:
+        return TipoDispositivo.IOT
     return None
 
 

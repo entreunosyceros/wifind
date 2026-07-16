@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 from wifind.wifi._comun import (
     dbm_a_porcentaje,
@@ -104,10 +105,31 @@ def desconectar_wifi() -> tuple[bool, str]:
     red = obtener_red_conectada()
     if not red:
         return False, "No hay conexión WiFi activa."
-    code, out, err = ejecutar_comando_resultado([_AIRPORT, "-z"], timeout=15.0)
+    iface = _wifi_iface()
+
+    # Intento 1: airport -z (puede no existir o estar restringido en algunas versiones).
+    code, out, err = ejecutar_comando_resultado([_AIRPORT, "-z"], timeout=10.0)
     if code == 0:
         return True, mensaje_exito_desconexion(red.ssid)
-    return False, mensaje_error_conexion(f"{out}\n{err}", ssid=red.ssid)
+
+    # Intento 2 (fallback): apagar/encender el WiFi con networksetup.
+    # En macOS reciente suele estar menos restringido que la herramienta privada airport.
+    if iface:
+        ejecutar_comando_resultado(
+            ["networksetup", "-setairportpower", iface, "off"], timeout=10.0
+        )
+        time.sleep(1.0)
+        code2, _out2, _err2 = ejecutar_comando_resultado(
+            ["networksetup", "-setairportpower", iface, "on"], timeout=10.0
+        )
+        if code2 == 0:
+            return True, mensaje_exito_desconexion(red.ssid)
+
+    return (
+        False,
+        "No se pudo desconectar la WiFi automáticamente en macOS. "
+        "Prueba a desconectar manualmente desde Ajustes → Wi-Fi.",
+    )
 
 
 def conectar_empresarial(

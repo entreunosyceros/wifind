@@ -19,6 +19,8 @@ class TipoDispositivo(str, Enum):
     ANDROID = "android"
     TELEFONO = "telefono"
     TABLET = "tablet"
+    CHROMECAST = "chromecast"
+    CAMARA = "camara"
     IOT = "iot"
     DESCONOCIDO = "desconocido"
 
@@ -30,6 +32,8 @@ _ETIQUETAS_TIPO = {
     TipoDispositivo.ANDROID: "Android",
     TipoDispositivo.TELEFONO: "Teléfono",
     TipoDispositivo.TABLET: "Tablet",
+    TipoDispositivo.CHROMECAST: "Chromecast",
+    TipoDispositivo.CAMARA: "Cámara IP",
     TipoDispositivo.IOT: "IoT / Smart",
     TipoDispositivo.DESCONOCIDO: "Dispositivo",
 }
@@ -42,9 +46,13 @@ class DispositivoRed:
     hostname: str = ""
     rol: RolDispositivo = RolDispositivo.OTRO
     tipo: TipoDispositivo = TipoDispositivo.DESCONOCIDO
+    fabricante: str = ""
+    puertos_abiertos: list[int] = None
     activo: bool = True
 
     def __post_init__(self) -> None:
+        if self.puertos_abiertos is None:
+            self.puertos_abiertos = []
         if self.tipo == TipoDispositivo.DESCONOCIDO:
             if self.rol == RolDispositivo.GATEWAY:
                 self.tipo = TipoDispositivo.ROUTER
@@ -74,6 +82,8 @@ class DispositivoRed:
         if self.hostname and self.hostname.lower() != "gateway":
             lineas.append(self.hostname)
         lineas.append(self.ip)
+        if self.fabricante:
+            lineas.append(self.fabricante)
         if self.mac:
             lineas.append(self.mac)
         return lineas
@@ -85,6 +95,8 @@ class DispositivoRed:
             "hostname": self.hostname,
             "rol": self.rol.value,
             "tipo": self.tipo.value,
+            "fabricante": self.fabricante,
+            "puertos_abiertos": self.puertos_abiertos,
             "activo": self.activo,
         }
 
@@ -106,6 +118,8 @@ class DispositivoRed:
             hostname=data.get("hostname", ""),
             rol=rol,
             tipo=tipo,
+            fabricante=data.get("fabricante", ""),
+            puertos_abiertos=list(data.get("puertos_abiertos", [])),
             activo=bool(data.get("activo", True)),
         )
 

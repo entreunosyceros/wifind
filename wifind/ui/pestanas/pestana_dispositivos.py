@@ -36,15 +36,26 @@ class HiloDescubrimiento(QThread):
     terminado = pyqtSignal(list)
     fallo = pyqtSignal(str)
 
-    def __init__(self, contexto: ContextoLan, parent=None) -> None:
+    def __init__(
+        self,
+        contexto: ContextoLan,
+        *,
+        enable_light_port_scan: bool,
+        light_port_timeout_ms: int,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self._contexto = contexto
+        self._enable_light_port_scan = enable_light_port_scan
+        self._light_port_timeout_ms = light_port_timeout_ms
 
     def run(self) -> None:
         try:
             dispositivos = descubrir_dispositivos(
                 self._contexto,
                 progreso=lambda msg, pct: self.progreso.emit(msg, pct),
+                enable_light_port_scan=self._enable_light_port_scan,
+                light_port_timeout_ms=self._light_port_timeout_ms,
             )
             self.terminado.emit(dispositivos)
         except Exception as exc:
@@ -150,7 +161,12 @@ class PestanaDispositivos(QWidget):
         self.export_btn.setEnabled(False)
         self._mostrar_progreso("Iniciando escaneo…", 0)
 
-        self._hilo = HiloDescubrimiento(self._contexto, self)
+        self._hilo = HiloDescubrimiento(
+            self._contexto,
+            enable_light_port_scan=self.prefs.enable_light_port_scan,
+            light_port_timeout_ms=self.prefs.light_port_timeout_ms,
+            parent=self,
+        )
         self._hilo.progreso.connect(self._on_progreso)
         self._hilo.terminado.connect(self._on_terminado)
         self._hilo.fallo.connect(self._on_fallo)
@@ -207,6 +223,8 @@ class PestanaDispositivos(QWidget):
             TipoDispositivo.ROUTER: ("#E65100", "#FFF3E0"),
             TipoDispositivo.ESTE_EQUIPO: ("#2E7D32", "#E8F5E9"),
             TipoDispositivo.PC: ("#0D47A1", "#E3F2FD"),
+            TipoDispositivo.CHROMECAST: ("#0B8043", "#E6F4EA"),
+            TipoDispositivo.CAMARA: ("#B71C1C", "#FFEBEE"),
             TipoDispositivo.ANDROID: ("#1B5E20", "#E8F5E9"),
             TipoDispositivo.TELEFONO: ("#6A1B9A", "#F3E5F5"),
             TipoDispositivo.TABLET: ("#00695C", "#E0F2F1"),

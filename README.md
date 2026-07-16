@@ -92,7 +92,6 @@ Los mensajes de éxito y error se muestran en **español claro** (p. ej. *Conect
 |------------|----------|-------------|
 | **Linux** | `nmcli device wifi connect` | `nmcli device disconnect` |
 | **Windows** | `netsh wlan connect` | `netsh wlan disconnect` |
-| **macOS** | `networksetup -setairportnetwork` | `airport -z` |
 
 ### Mapa de calor con paredes
 
@@ -165,15 +164,18 @@ Cuando estás conectado a una red WiFi con IP asignada:
    | Naranja | Router / gateway |
    | Verde | Este equipo |
    | Azul | Ordenador |
+   | Verde oscuro | Chromecast |
+   | Rojo | Cámara IP |
    | Morado | iPhone / teléfono |
    | **Verde Android** | **Móvil o tablet Android** (nombre `Android_…` vía mDNS) |
    | Verde azulado | Tablet |
    | Gris | IoT / Smart TV / impresora |
    | Azul claro | Dispositivo sin clasificar |
 
-   La clasificación usa el **nombre de host** (p. ej. `Android_…`, `iPhone`, `DESKTOP-…`) obtenido por DNS inverso y **mDNS** (`avahi-resolve` en Linux), además del prefijo MAC cuando no está aleatorizado.
+   La clasificación usa el **nombre de host** (p. ej. `Android_…`, `iPhone`, `DESKTOP-…`) obtenido por DNS inverso y **mDNS** (`avahi-resolve` en Linux), lookup local de **fabricante por MAC (OUI)** y, opcionalmente, un escaneo ligero de puertos.
 
    En Linux instala `avahi-utils` si no detecta móviles Android. Muchos Android usan MAC aleatoria y solo se identifican por mDNS.
+   Si quieres ampliar fabricantes OUI, crea `~/.config/wifind/oui.csv` con formato `AA:BB:CC,Fabricante`.
 
 4. Cada tarjeta muestra el tipo, nombre de host (si se resuelve), IP y MAC
 5. La **leyenda** inferior muestra solo los tipos presentes en el escaneo
@@ -223,8 +225,7 @@ wifind/
 │   ├── plataforma.py          # Fachada multiplataforma
 │   ├── mensajes.py            # Mensajes legibles de conexión/desconexión
 │   ├── linux.py               # Backend Linux (nmcli/iw)
-│   ├── windows.py             # Backend Windows (netsh)
-│   └── macos.py               # Backend macOS (airport)
+│   └── windows.py             # Backend Windows (netsh)
 └── ui/
     ├── ventana_principal.py   # Ventana principal
     ├── indicador_senal.py     # Widget de rayas de señal
@@ -262,7 +263,7 @@ Las preferencias se almacenan en:
 - Linux: `~/.config/wifind/settings.json`
 - Windows: `%USERPROFILE%\.config\wifind\settings.json` (o equivalente)
 
-Opciones configurables: intervalo de escaneo, umbrales de señal, unidades (m/ft), tema, carpeta de exportación, parámetros de survey.
+Opciones configurables: intervalo de escaneo, umbrales de señal, unidades (m/ft), tema, carpeta de exportación, parámetros de survey, escaneo ligero de puertos LAN (opcional) y timeout de puertos.
 
 Consulta el **Manual de usuario** integrado en **Opciones → Manual…** (incluye descripción de columnas del escáner, paredes, exportación y atajos).
 

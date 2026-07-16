@@ -282,6 +282,18 @@ class GraficoDispositivos(QWidget):
             "ancho": 0.92,
             "alto_base": 0.4,
         },
+        TipoDispositivo.CHROMECAST: {
+            "fill": "#0B8043",
+            "edge": "#1B5E20",
+            "ancho": 0.95,
+            "alto_base": 0.4,
+        },
+        TipoDispositivo.CAMARA: {
+            "fill": "#E53935",
+            "edge": "#B71C1C",
+            "ancho": 0.92,
+            "alto_base": 0.4,
+        },
         TipoDispositivo.IOT: {
             "fill": "#78909C",
             "edge": "#455A64",
@@ -303,6 +315,8 @@ class GraficoDispositivos(QWidget):
         TipoDispositivo.ANDROID,
         TipoDispositivo.TELEFONO,
         TipoDispositivo.TABLET,
+        TipoDispositivo.CHROMECAST,
+        TipoDispositivo.CAMARA,
         TipoDispositivo.IOT,
         TipoDispositivo.DESCONOCIDO,
     )

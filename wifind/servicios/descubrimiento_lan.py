@@ -13,6 +13,8 @@ ProgresoCallback = Callable[[str, int], None]
 
 from wifind.modelos.dispositivo_red import ContextoLan, DispositivoRed, RolDispositivo
 from wifind.servicios.clasificacion_dispositivo import clasificar_dispositivos
+from wifind.servicios.oui_lookup import resolver_fabricante
+from wifind.servicios.puertos_ligeros import escanear_puertos_ligeros
 from wifind.wifi._comun import ejecutar_comando_resultado
 
 
@@ -47,6 +49,8 @@ def descubrir_dispositivos(
     contexto: ContextoLan | None = None,
     *,
     progreso: ProgresoCallback | None = None,
+    enable_light_port_scan: bool = False,
+    light_port_timeout_ms: int = 400,
 ) -> list[DispositivoRed]:
     ctx = contexto or obtener_contexto_lan()
     if ctx is None or not ctx.ip:
@@ -91,8 +95,23 @@ def descubrir_dispositivos(
         for dev in _leer_tabla_arp(ctx):
             _fusionar_dispositivo(por_ip, dev)
 
-    avisar("Resolviendo nombres…", 92)
+    avisar("Resolviendo nombres…", 90)
     _resolver_hostnames(por_ip.values(), avisar)
+
+    avisar("Resolviendo fabricantes (OUI)…", 94)
+    for dev in por_ip.values():
+        if not dev.fabricante:
+            dev.fabricante = resolver_fabricante(dev.mac)
+
+    if enable_light_port_scan:
+        avisar("Escaneo ligero de puertos…", 97)
+        objetivos = [d.ip for d in por_ip.values() if d.rol == RolDispositivo.OTRO]
+        abiertos = escanear_puertos_ligeros(
+            objetivos, timeout_ms=light_port_timeout_ms
+        )
+        for dev in por_ip.values():
+            dev.puertos_abiertos = abiertos.get(dev.ip, [])
+
     clasificar_dispositivos(por_ip.values())
 
     avisar("Escaneo completado", 100)

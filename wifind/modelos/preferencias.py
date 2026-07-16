@@ -29,6 +29,8 @@ class PreferenciasApp:
     walk_step_m: float = 1.0
     auto_survey_advance_y: bool = True
     compare_ssids: list[str] = field(default_factory=list)
+    enable_light_port_scan: bool = False
+    light_port_timeout_ms: int = 400
 
     @property
     def thresholds(self) -> dict[str, int]:
@@ -77,6 +79,8 @@ class PreferenciasApp:
                 walk_step_m=float(data.get("walk_step_m", 1.0)),
                 auto_survey_advance_y=bool(data.get("auto_survey_advance_y", True)),
                 compare_ssids=list(data.get("compare_ssids", [])),
+                enable_light_port_scan=bool(data.get("enable_light_port_scan", False)),
+                light_port_timeout_ms=int(data.get("light_port_timeout_ms", 400)),
             )
         except (json.JSONDecodeError, OSError, TypeError, ValueError):
             return cls()
