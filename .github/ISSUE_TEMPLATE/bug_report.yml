@@ -1,0 +1,100 @@
+name: Informe de error
+description: Algo no funciona como debería en WiFind
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por reportar un error. Cuanta más información des, más fácil será reproducirlo.
+        No incluyas credenciales ni datos privados de red sin anonimizar (SSID/BSSID/IPs).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área afectada
+      options:
+        - Escáner WiFi
+        - Conexión/Desconexión WiFi
+        - Intensidad en vivo
+        - Mapa de calor
+        - Modelo de paredes
+        - Survey por waypoints
+        - Análisis de canales
+        - Dispositivos LAN
+        - Exportación (PNG/PDF/CSV)
+        - Informe HTML
+        - Preferencias
+        - Bandeja del sistema / ventana principal
+        - Arranque (run_app.py)
+        - Otro
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Versión o commit
+      description: Versión de WiFind o hash de commit si ejecutas desde código fuente
+      placeholder: "1.0.0 o main @ abc1234"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducir
+      description: Lista numerada de acciones hasta ver el fallo
+      placeholder: |
+        1. Abrir la app
+        2. Ir a la pestaña afectada
+        3. Ejecutar la acción
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamiento esperado
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Comportamiento actual
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs o capturas
+      description: Salida de terminal, traceback o capturas (sin datos personales)
+      render: shell
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Entorno
+      options:
+        - Linux
+        - Windows
+        - No lo sé
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Versión de Python (si aplica)
+      placeholder: "3.12.x"
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmación
+      options:
+        - label: He buscado en issues abiertas y cerradas y no he encontrado un duplicado
+          required: true

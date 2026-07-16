@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Guía de contribución
+    url: https://github.com/entreunosyceros/wifind/blob/main/CONTRIBUTING.md
+    about: Cómo reportar bugs, proponer mejoras y enviar pull requests.
+  - name: Política de seguridad
+    url: https://github.com/entreunosyceros/wifind/blob/main/SECURITY.md
+    about: Reporta vulnerabilidades siguiendo SECURITY.md (no publiques detalles en issues abiertas).
+  - name: Documentación del proyecto
+    url: https://github.com/entreunosyceros/wifind/blob/main/README.md
+    about: Instalación, uso, escaneo WiFi, mapas de calor y dispositivos LAN.

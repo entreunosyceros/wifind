@@ -1,0 +1,63 @@
+name: Solicitud de mejora
+description: Proponer una nueva función o mejora en WiFind
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe primero el problema de uso (escaneo, señal, mapa de calor o LAN) y luego la propuesta.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options:
+        - Escáner WiFi (redes detectadas, columnas, filtros)
+        - Conexión/Desconexión WiFi
+        - Intensidad en vivo
+        - Mapa de calor (mediciones/interpolación)
+        - Modelo de paredes/obstáculos
+        - Survey por waypoints
+        - Análisis de canales
+        - Dispositivos LAN (ARP/ping/mDNS/OUI/puertos)
+        - Exportación (PNG/PDF/CSV)
+        - Informe HTML
+        - Preferencias
+        - UI/UX (PyQt6)
+        - Arranque / instalación
+        - Rendimiento / estabilidad
+        - Otro
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: ¿Qué problema o necesidad quieres resolver?
+      placeholder: "Ej.: En la pestaña Dispositivos varios equipos salen como 'Dispositivo' y no se distinguen teléfonos de IoT."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solución propuesta (opcional)
+      description: Cómo imaginas que debería funcionar
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Alcance
+      options:
+        - label: Estoy dispuesto/a a contribuir con un PR si la propuesta encaja
+          required: false
