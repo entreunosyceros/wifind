@@ -259,7 +259,7 @@ Cada planta (`floors[]`) incluye:
 
 Las preferencias se almacenan en:
 
-- Linux/macOS: `~/.config/wifind/settings.json`
+- Linux: `~/.config/wifind/settings.json`
 - Windows: `%USERPROFILE%\.config\wifind\settings.json` (o equivalente)
 
 Opciones configurables: intervalo de escaneo, umbrales de señal, unidades (m/ft), tema, carpeta de exportación, parámetros de survey.
