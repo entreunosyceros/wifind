@@ -67,6 +67,8 @@ class DispositivoRed:
 
     @property
     def tipo_legible(self) -> str:
+        if self.rol == RolDispositivo.GATEWAY:
+            return "Router (gateway)"
         if self.rol == RolDispositivo.LOCAL:
             return _ETIQUETAS_TIPO.get(self.tipo, "Este equipo")
         return _ETIQUETAS_TIPO.get(self.tipo, "Dispositivo")

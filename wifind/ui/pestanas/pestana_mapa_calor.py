@@ -6,6 +6,7 @@ import time
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from matplotlib.patches import Circle
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -14,12 +15,16 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -29,10 +34,31 @@ from wifind.mapa_calor import (
     dibujar_mapa_calor_comparacion_en,
     dibujar_mapa_calor_en,
 )
-from wifind.modelos.medicion import Medicion, Obstaculo, PuntoRuta, MATERIALES_PARED, atenuacion_material
+from wifind.modelos.medicion import (
+    COLORES_HABITACION,
+    MATERIALES_PARED,
+    Medicion,
+    Habitacion,
+    NOMBRES_HABITACION,
+    Obstaculo,
+    PuntoAcceso,
+    PuntoRuta,
+    TIPOS_PUNTO_ACCESO,
+    atenuacion_material,
+    nombre_por_defecto_ap,
+)
 from wifind.modelos.preferencias import PreferenciasApp
 from wifind.modelos.sesion import SesionApp, NivelPlanta
 from wifind.servicios.cobertura import calcular_estadisticas_cobertura
+from wifind.servicios.escala_plano import (
+    calcular_metricas_escala,
+    distancia_metros,
+    esta_calibrado,
+    formatear_area,
+    formatear_longitud,
+    metros_a_px,
+)
+from wifind.servicios.habitaciones import evaluar_habitaciones_planta
 from wifind.servicios.recorrido import MotorRecorrido
 from wifind.wifi.plataforma import obtener_red_conectada
 
@@ -74,22 +100,81 @@ class DialogoEditarPared(QDialog):
         return self.material_combo.currentData(), self.atenuacion_spin.value()
 
 
+class DialogoEditarAP(QDialog):
+    def __init__(self, ap: PuntoAcceso, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Editar punto de acceso")
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.tipo_combo = QComboBox()
+        for key, (label, _, _) in TIPOS_PUNTO_ACCESO.items():
+            self.tipo_combo.addItem(f"📡 {label}", key)
+        idx = max(0, self.tipo_combo.findData(ap.tipo))
+        self.tipo_combo.setCurrentIndex(idx)
+        self.nombre_edit = QLineEdit(ap.nombre)
+        form.addRow("Tipo:", self.tipo_combo)
+        form.addRow("Nombre:", self.nombre_edit)
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def resultado(self) -> tuple[str, str]:
+        return self.tipo_combo.currentData(), self.nombre_edit.text().strip() or "AP"
+
+
+class DialogoEditarHabitacion(QDialog):
+    def __init__(self, habitacion: Habitacion, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Editar habitación")
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.nombre_combo = QComboBox()
+        self.nombre_combo.setEditable(True)
+        for nombre in NOMBRES_HABITACION:
+            self.nombre_combo.addItem(nombre)
+        self.nombre_combo.setCurrentText(habitacion.nombre)
+        form.addRow("Nombre:", self.nombre_combo)
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def resultado(self) -> str:
+        return self.nombre_combo.currentText().strip() or "Habitación"
+
+
 class LienzoMapaCalor(FigureCanvasQTAgg):
     def __init__(self, tab: "PestanaMapaCalor", parent=None) -> None:
         self.tab = tab
         self._drag_idx: int | None = None
+        self._drag_ap_idx: int | None = None
+        self._ap_drag_marker = None
+        self._ap_drag_label = None
         self._cal_start: tuple[float, float] | None = None
         self._wall_start: tuple[float, float] | None = None
+        self._measure_start: tuple[float, float] | None = None
+        self._room_start: tuple[float, float] | None = None
         self._wall_preview_line = None
+        self._measure_preview_line = None
+        self._room_preview_patch = None
         figure = Figure(figsize=(6, 5), dpi=100)
         super().__init__(figure)
         self.setParent(parent)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("button_release_event", self._on_release)
         self.mpl_connect("motion_notify_event", self._on_motion)
 
     def redraw(self) -> None:
         self._limpiar_preview_pared()
+        self._limpiar_preview_habitacion()
         floor = self.tab.session.planta_activa
         prefs = self.tab.prefs
         cal = floor.calibration
@@ -99,6 +184,8 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
 
         fig = self.figure
         fig.clear()
+
+        etiquetas = self.tab.etiquetas_habitaciones()
 
         compare = self.tab.compare_list.selectedItems()
         if len(compare) >= 2:
@@ -114,6 +201,8 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
                 floor.floor_plan_path,
                 floor.obstaculos,
                 prefs.theme,
+                floor.access_points,
+                floor.habitaciones,
             )
         else:
             ssid = self.tab.ssid_combo.currentText()
@@ -134,12 +223,39 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
                 floor.waypoints,
                 cal_line,
                 floor.obstaculos,
+                floor.access_points,
+                floor.habitaciones,
+                etiquetas,
+                self.tab.router_para_cobertura(),
+                self.tab.radios_router_para_dibujo(),
+                floor.calibration if self.tab.mostrar_cobertura_router else None,
                 prefs.sufijo_longitud(),
                 theme=prefs.theme,
             )
+            self._dibujar_radios_cobertura(ax, pts, floor.calibration)
 
         self.draw_idle()
         self.tab.actualizar_cobertura()
+        self.tab.actualizar_etiqueta_escala()
+
+    def _dibujar_radios_cobertura(self, ax, pts, cal) -> None:
+        if not self.tab.mostrar_radio or not esta_calibrado(cal):
+            return
+        radio_px = metros_a_px(self.tab.radio_cobertura_m, cal)
+        if radio_px is None or radio_px <= 0 or not pts:
+            return
+        for p in pts:
+            circ = Circle(
+                (p.x, p.y),
+                radio_px,
+                fill=False,
+                edgecolor="#1565C0",
+                linewidth=1.2,
+                linestyle="--",
+                alpha=0.65,
+                zorder=4,
+            )
+            ax.add_patch(circ)
 
     def _limpiar_preview_pared(self) -> None:
         if self._wall_preview_line is not None:
@@ -148,6 +264,67 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
             except (ValueError, AttributeError):
                 pass
             self._wall_preview_line = None
+
+    def _limpiar_preview_medida(self) -> None:
+        if self._measure_preview_line is not None:
+            try:
+                self._measure_preview_line.remove()
+            except (ValueError, AttributeError):
+                pass
+            self._measure_preview_line = None
+
+    def _limpiar_preview_habitacion(self) -> None:
+        if self._room_preview_patch is not None:
+            try:
+                self._room_preview_patch.remove()
+            except (ValueError, AttributeError):
+                pass
+            self._room_preview_patch = None
+
+    def _limpiar_preview_drag_ap(self) -> None:
+        for attr in ("_ap_drag_marker", "_ap_drag_label"):
+            artist = getattr(self, attr, None)
+            if artist is not None:
+                try:
+                    artist.remove()
+                except (ValueError, AttributeError):
+                    pass
+                setattr(self, attr, None)
+
+    def _actualizar_preview_drag_ap(self, x: float, y: float) -> None:
+        from wifind.modelos.medicion import color_tipo_ap, marcador_tipo_ap
+
+        ap = self.tab.session.planta_activa.access_points[self._drag_ap_idx]
+        color = color_tipo_ap(ap.tipo)
+        ax = self.figure.gca()
+        if self._ap_drag_marker is None:
+            (self._ap_drag_marker,) = ax.plot(
+                [x],
+                [y],
+                marker=marcador_tipo_ap(ap.tipo),
+                markersize=14,
+                color=color,
+                markeredgecolor="white",
+                markeredgewidth=1.2,
+                linestyle="None",
+                zorder=20,
+            )
+            self._ap_drag_label = ax.annotate(
+                ap.nombre + (" *" if ap.es_referencia else ""),
+                (x, y),
+                textcoords="offset points",
+                xytext=(0, 12),
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                fontweight="bold",
+                color=color,
+                zorder=21,
+            )
+        else:
+            self._ap_drag_marker.set_data([x], [y])
+            self._ap_drag_label.xy = (x, y)
+        self.draw_idle()
 
     def _actualizar_preview_pared(self, x2: float, y2: float) -> None:
         if self._wall_start is None:
@@ -171,6 +348,60 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
             self._wall_preview_line.set_color(color)
         self.draw_idle()
 
+    def _actualizar_preview_medida(self, x2: float, y2: float) -> None:
+        if self._measure_start is None:
+            return
+        x1, y1 = self._measure_start
+        ax = self.figure.gca()
+        if self._measure_preview_line is None:
+            (self._measure_preview_line,) = ax.plot(
+                [x1, x2],
+                [y1, y2],
+                color="#FF6F00",
+                linewidth=2.5,
+                linestyle="-",
+                alpha=0.9,
+                zorder=11,
+            )
+        else:
+            self._measure_preview_line.set_data([x1, x2], [y1, y2])
+        dist_m = distancia_metros(x1, y1, x2, y2, self.tab.session.planta_activa.calibration)
+        texto = formatear_longitud(dist_m, self.tab.prefs.units)
+        self.tab.measure_result_label.setText(f"Distancia: {texto}")
+        self.draw_idle()
+
+    def _actualizar_preview_habitacion(self, x2: float, y2: float) -> None:
+        if self._room_start is None:
+            return
+        from matplotlib.patches import Rectangle
+
+        x1, y1 = self._room_start
+        xa, ya = min(x1, x2), min(y1, y2)
+        w, h = abs(x2 - x1), abs(y2 - y1)
+        ax = self.figure.gca()
+        color = self.tab.color_habitacion_actual()
+        if self._room_preview_patch is None:
+            self._room_preview_patch = Rectangle(
+                (xa, ya),
+                w,
+                h,
+                fill=True,
+                facecolor=color,
+                edgecolor=color,
+                linewidth=1.8,
+                linestyle="--",
+                alpha=0.25,
+                zorder=12,
+            )
+            ax.add_patch(self._room_preview_patch)
+        else:
+            self._room_preview_patch.set_xy((xa, ya))
+            self._room_preview_patch.set_width(w)
+            self._room_preview_patch.set_height(h)
+            self._room_preview_patch.set_facecolor(color)
+            self._room_preview_patch.set_edgecolor(color)
+        self.draw_idle()
+
     def _on_press(self, event) -> None:
         if event.inaxes is None or event.xdata is None or event.ydata is None:
             return
@@ -182,9 +413,29 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
                 self._cal_start = (x, y)
             return
 
+        if self.tab.measure_mode:
+            if event.button == 1:
+                self._measure_start = (x, y)
+            return
+
         if self.tab.modo_pared:
             if event.button == 1:
                 self._wall_start = (x, y)
+            return
+
+        if self.tab.modo_habitacion:
+            if event.button == 1:
+                self._room_start = (x, y)
+            return
+
+        if self.tab.modo_ap:
+            if event.button == 1:
+                # Si hay un AP cerca, arrastrarlo; si no, colocar uno nuevo
+                ap_idx = self.tab.ap_mas_cercano(x, y)
+                if ap_idx is not None:
+                    self._drag_ap_idx = ap_idx
+                else:
+                    self.tab.colocar_ap_en(x, y)
             return
 
         if event.key == "shift" and event.button == 1:
@@ -194,6 +445,14 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
             return
 
         if event.button == 3:
+            room_idx = self.tab.habitacion_en_punto(x, y)
+            if room_idx is not None:
+                self.tab.menu_habitacion(room_idx)
+                return
+            ap_idx = self.tab.ap_mas_cercano(x, y)
+            if ap_idx is not None:
+                self.tab.menu_ap(ap_idx)
+                return
             wall_idx = self.tab.obstaculo_mas_cercano(x, y)
             if wall_idx is not None:
                 self.tab.menu_obstaculo(wall_idx)
@@ -204,6 +463,10 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
             return
 
         if event.button == 1:
+            ap_idx = self.tab.ap_mas_cercano(x, y)
+            if ap_idx is not None:
+                self._drag_ap_idx = ap_idx
+                return
             idx = self.tab.punto_mas_cercano(x, y, threshold=0.8)
             if idx is not None:
                 self._drag_idx = idx
@@ -216,11 +479,12 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
                 return
             x1, y1 = self._cal_start
             x2, y2 = event.xdata, event.ydata
+            unidad = "ft" if self.tab.prefs.units == "ft" else "m"
             length, ok = QInputDialog.getDouble(
                 self.tab,
                 "Calibración",
-                "Longitud real de la línea (m):",
-                1.0,
+                f"Longitud real de la línea ({unidad}):\nEjemplo: 8 {unidad}",
+                8.0 if unidad == "m" else 26.0,
                 0.01,
                 1000,
                 2,
@@ -228,21 +492,50 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
             if ok and length > 0:
                 import math
 
+                length_m = self.tab.prefs.a_metros(length)
                 pixel_dist = math.hypot(x2 - x1, y2 - y1)
                 cal = self.tab.session.planta_activa.calibration
                 cal.x1, cal.y1, cal.x2, cal.y2 = x1, y1, x2, y2
-                cal.real_length_m = length
-                cal.pixels_per_meter = pixel_dist / length if length else 0
-                if cal.pixels_per_meter > 0:
-                    self.tab.session.planta_activa.x_max = max(
-                        self.tab.session.planta_activa.x_max,
-                        pixel_dist,
-                    )
+                cal.real_length_m = length_m
+                cal.pixels_per_meter = pixel_dist / length_m if length_m else 0
                 self.tab.calibrate_mode = False
                 self.tab.calibrate_btn.setChecked(False)
                 self.tab.session.touch()
             self._cal_start = None
             self.redraw()
+            return
+
+        if self.tab.measure_mode and self._measure_start and event.button == 1:
+            if event.xdata is None or event.ydata is None:
+                self._measure_start = None
+                self._limpiar_preview_medida()
+                return
+            x1, y1 = self._measure_start
+            x2, y2 = event.xdata, event.ydata
+            dist_m = distancia_metros(
+                x1, y1, x2, y2, self.tab.session.planta_activa.calibration
+            )
+            self.tab.measure_result_label.setText(
+                f"Distancia: {formatear_longitud(dist_m, self.tab.prefs.units)}"
+            )
+            # Dejar la línea medida visible hasta el siguiente redraw
+            ax = self.figure.gca()
+            ax.plot([x1, x2], [y1, y2], color="#FF6F00", linewidth=2.5, zorder=11)
+            mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
+            ax.text(
+                mid_x,
+                mid_y,
+                formatear_longitud(dist_m, self.tab.prefs.units),
+                color="#E65100",
+                fontsize=10,
+                fontweight="bold",
+                ha="center",
+                va="bottom",
+                zorder=12,
+            )
+            self._limpiar_preview_medida()
+            self._measure_start = None
+            self.draw_idle()
             return
 
         if self.tab.modo_pared and self._wall_start and event.button == 1:
@@ -268,9 +561,39 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
             self.redraw()
             return
 
+        if self.tab.modo_habitacion and self._room_start and event.button == 1:
+            self._limpiar_preview_habitacion()
+            if event.xdata is None or event.ydata is None:
+                self._room_start = None
+                return
+            x1, y1 = self._room_start
+            x2, y2 = event.xdata, event.ydata
+            import math
+
+            if math.hypot(x2 - x1, y2 - y1) >= 0.3:
+                self.tab.colocar_habitacion_rect(x1, y1, x2, y2)
+            self._room_start = None
+            self.redraw()
+            return
+
+        if self._drag_ap_idx is not None:
+            self._limpiar_preview_drag_ap()
+            self.tab.session.touch()
+            self._drag_ap_idx = None
+            self.redraw()
+            return
+
         self._drag_idx = None
 
     def _on_motion(self, event) -> None:
+        if (
+            self.tab.measure_mode
+            and self._measure_start is not None
+            and event.xdata is not None
+            and event.ydata is not None
+        ):
+            self._actualizar_preview_medida(event.xdata, event.ydata)
+            return
         if (
             self.tab.modo_pared
             and self._wall_start is not None
@@ -278,6 +601,20 @@ class LienzoMapaCalor(FigureCanvasQTAgg):
             and event.ydata is not None
         ):
             self._actualizar_preview_pared(event.xdata, event.ydata)
+            return
+        if (
+            self.tab.modo_habitacion
+            and self._room_start is not None
+            and event.xdata is not None
+            and event.ydata is not None
+        ):
+            self._actualizar_preview_habitacion(event.xdata, event.ydata)
+            return
+        if self._drag_ap_idx is not None and event.xdata is not None and event.ydata is not None:
+            ap = self.tab.session.planta_activa.access_points[self._drag_ap_idx]
+            ap.x = event.xdata
+            ap.y = event.ydata
+            self._actualizar_preview_drag_ap(event.xdata, event.ydata)
             return
         if self._drag_idx is None or event.xdata is None or event.ydata is None:
             return
@@ -296,7 +633,13 @@ class PestanaMapaCalor(QWidget):
         self.prefs = prefs
         self._networks = []
         self.calibrate_mode = False
+        self.measure_mode = False
+        self.mostrar_radio = False
+        self.mostrar_cobertura_router = False
+        self.radio_cobertura_m = 5.0
         self.modo_pared = False
+        self.modo_ap = False
+        self.modo_habitacion = False
         self._undo: list[list] = []
         self._redo: list[list] = []
 
@@ -307,8 +650,13 @@ class PestanaMapaCalor(QWidget):
         )
 
         layout = QHBoxLayout(self)
-        sidebar = QVBoxLayout()
-        layout.addLayout(sidebar, stretch=0)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(6)
+
+        sidebar_host = QWidget()
+        sidebar = QVBoxLayout(sidebar_host)
+        sidebar.setContentsMargins(4, 4, 8, 4)
+        sidebar.setSpacing(4)
 
         form = QFormLayout()
         self.floor_combo = QComboBox()
@@ -352,6 +700,36 @@ class PestanaMapaCalor(QWidget):
         self.calibrate_btn.toggled.connect(self.alternar_calibrar)
         sidebar.addWidget(self.calibrate_btn)
 
+        self.scale_label = QLabel("Escala: sin calibrar")
+        self.scale_label.setWordWrap(True)
+        sidebar.addWidget(self.scale_label)
+
+        self.measure_dist_btn = QPushButton("Medir distancia")
+        self.measure_dist_btn.setCheckable(True)
+        self.measure_dist_btn.toggled.connect(self.alternar_medir_distancia)
+        sidebar.addWidget(self.measure_dist_btn)
+
+        self.measure_result_label = QLabel("Distancia: —")
+        self.measure_result_label.setWordWrap(True)
+        sidebar.addWidget(self.measure_result_label)
+
+        self.radius_check = QCheckBox("Mostrar radio de cobertura")
+        self.radius_check.toggled.connect(self.alternar_radio_cobertura)
+        sidebar.addWidget(self.radius_check)
+
+        self.radius_spin = QDoubleSpinBox()
+        self.radius_spin.setRange(0.5, 100.0)
+        self.radius_spin.setDecimals(1)
+        self.radius_spin.setSingleStep(0.5)
+        self.radius_spin.setValue(self.prefs.desde_metros(5.0))
+        self.radius_spin.setSuffix(self.prefs.sufijo_longitud())
+        self.radius_spin.valueChanged.connect(self.radio_cobertura_cambiado)
+        sidebar.addWidget(self.radius_spin)
+
+        self.router_coverage_check = QCheckBox("Cobertura respecto al router")
+        self.router_coverage_check.toggled.connect(self.alternar_cobertura_router)
+        sidebar.addWidget(self.router_coverage_check)
+
         self.modo_pared_btn = QPushButton("Dibujar paredes")
         self.modo_pared_btn.setCheckable(True)
         self.modo_pared_btn.toggled.connect(self.alternar_modo_pared)
@@ -380,6 +758,49 @@ class PestanaMapaCalor(QWidget):
         self.limpiar_paredes_btn = QPushButton("Limpiar paredes")
         self.limpiar_paredes_btn.clicked.connect(self.limpiar_paredes)
         sidebar.addWidget(self.limpiar_paredes_btn)
+
+        self.modo_habitacion_btn = QPushButton("Dibujar habitaciones")
+        self.modo_habitacion_btn.setCheckable(True)
+        self.modo_habitacion_btn.toggled.connect(self.alternar_modo_habitacion)
+        sidebar.addWidget(self.modo_habitacion_btn)
+
+        self.nombre_habitacion_combo = QComboBox()
+        self.nombre_habitacion_combo.setEditable(True)
+        for nombre in NOMBRES_HABITACION:
+            self.nombre_habitacion_combo.addItem(nombre)
+        self.nombre_habitacion_combo.setCurrentText("Salón")
+        sidebar.addWidget(QLabel("Nombre habitación:"))
+        sidebar.addWidget(self.nombre_habitacion_combo)
+
+        self.limpiar_habitaciones_btn = QPushButton("Limpiar habitaciones")
+        self.limpiar_habitaciones_btn.clicked.connect(self.limpiar_habitaciones)
+        sidebar.addWidget(self.limpiar_habitaciones_btn)
+
+        self.rooms_label = QLabel("")
+        self.rooms_label.setWordWrap(True)
+        sidebar.addWidget(self.rooms_label)
+
+        self.modo_ap_btn = QPushButton("Colocar AP")
+        self.modo_ap_btn.setCheckable(True)
+        self.modo_ap_btn.toggled.connect(self.alternar_modo_ap)
+        sidebar.addWidget(self.modo_ap_btn)
+
+        self.tipo_ap_combo = QComboBox()
+        for key, (label, _, _) in TIPOS_PUNTO_ACCESO.items():
+            self.tipo_ap_combo.addItem(f"📡 {label}", key)
+        self.tipo_ap_combo.setCurrentIndex(self.tipo_ap_combo.findData("ap"))
+        self.tipo_ap_combo.currentIndexChanged.connect(self.tipo_ap_cambiado)
+        sidebar.addWidget(QLabel("Tipo de equipo:"))
+        sidebar.addWidget(self.tipo_ap_combo)
+
+        self.nombre_ap_edit = QLineEdit(nombre_por_defecto_ap("ap"))
+        self.nombre_ap_edit.setPlaceholderText("Nombre en el plano")
+        sidebar.addWidget(QLabel("Nombre:"))
+        sidebar.addWidget(self.nombre_ap_edit)
+
+        self.limpiar_aps_btn = QPushButton("Limpiar APs")
+        self.limpiar_aps_btn.clicked.connect(self.limpiar_aps)
+        sidebar.addWidget(self.limpiar_aps_btn)
 
         self.survey_btn = QPushButton("Iniciar recorrido auto")
         self.survey_btn.setCheckable(True)
@@ -424,6 +845,16 @@ class PestanaMapaCalor(QWidget):
         sidebar.addWidget(add_manual)
         sidebar.addStretch()
 
+        scroll = QScrollArea()
+        scroll.setWidget(sidebar_host)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMinimumWidth(250)
+        scroll.setMaximumWidth(340)
+        scroll.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        layout.addWidget(scroll, stretch=0)
+
         self.canvas = LienzoMapaCalor(self)
         layout.addWidget(self.canvas, stretch=1)
 
@@ -455,6 +886,7 @@ class PestanaMapaCalor(QWidget):
             self.floor_plan_label.setText(f"Plano: {Path(floor.floor_plan_path).name}")
         else:
             self.floor_plan_label.setText("Plano: ninguno")
+        self.actualizar_etiqueta_escala()
         self.canvas.redraw()
 
     def cambiar_planta(self, index: int) -> None:
@@ -685,6 +1117,12 @@ class PestanaMapaCalor(QWidget):
         if on:
             self.calibrate_mode = False
             self.calibrate_btn.setChecked(False)
+            self.measure_mode = False
+            self.measure_dist_btn.setChecked(False)
+            self.modo_ap = False
+            self.modo_ap_btn.setChecked(False)
+            self.modo_habitacion = False
+            self.modo_habitacion_btn.setChecked(False)
             if self.survey_btn.isChecked():
                 self.survey_btn.setChecked(False)
             QMessageBox.information(
@@ -709,15 +1147,353 @@ class PestanaMapaCalor(QWidget):
         self.session.touch()
         self.canvas.redraw()
 
+    def alternar_modo_ap(self, on: bool) -> None:
+        self.modo_ap = on
+        if on:
+            self.calibrate_mode = False
+            self.calibrate_btn.setChecked(False)
+            self.measure_mode = False
+            self.measure_dist_btn.setChecked(False)
+            self.modo_pared = False
+            self.modo_pared_btn.setChecked(False)
+            self.modo_habitacion = False
+            self.modo_habitacion_btn.setChecked(False)
+            if self.survey_btn.isChecked():
+                self.survey_btn.setChecked(False)
+            QMessageBox.information(
+                self,
+                "Colocar AP",
+                "Elige el tipo (Router, AP, Repetidor) y un nombre,\n"
+                "luego haz clic en el plano para colocarlo.\n\n"
+                "Clic derecho sobre un AP: editar, marcar como referencia o eliminar.\n"
+                "Arrastra un AP (incluido el router) para moverlo.",
+            )
+
+    def color_habitacion_actual(self) -> str:
+        n = len(self.session.planta_activa.habitaciones)
+        return COLORES_HABITACION[n % len(COLORES_HABITACION)]
+
+    def alternar_modo_habitacion(self, on: bool) -> None:
+        self.modo_habitacion = on
+        if on:
+            self.calibrate_mode = False
+            self.calibrate_btn.setChecked(False)
+            self.measure_mode = False
+            self.measure_dist_btn.setChecked(False)
+            self.modo_pared = False
+            self.modo_pared_btn.setChecked(False)
+            self.modo_ap = False
+            self.modo_ap_btn.setChecked(False)
+            if self.survey_btn.isChecked():
+                self.survey_btn.setChecked(False)
+            QMessageBox.information(
+                self,
+                "Habitaciones",
+                "Elige un nombre (Salón, Dormitorio, Cocina…)\n"
+                "y arrastra un rectángulo sobre el plano.\n\n"
+                "Con mediciones, cada habitación se evalúa como\n"
+                "Excelente / Buena / Aceptable / Deficiente.\n"
+                "Clic derecho: editar o eliminar.",
+            )
+        else:
+            self.canvas._room_start = None
+            self.canvas._limpiar_preview_habitacion()
+            self.canvas.draw_idle()
+
+    def colocar_habitacion_rect(self, x1: float, y1: float, x2: float, y2: float) -> None:
+        nombre = self.nombre_habitacion_combo.currentText().strip() or "Habitación"
+        hab = Habitacion.desde_rectangulo(
+            x1, y1, x2, y2, nombre, self.color_habitacion_actual()
+        )
+        self.session.planta_activa.habitaciones.append(hab)
+        self.session.touch()
+        # Avanzar al siguiente nombre sugerido
+        idx = self.nombre_habitacion_combo.currentIndex()
+        if 0 <= idx < self.nombre_habitacion_combo.count() - 1:
+            self.nombre_habitacion_combo.setCurrentIndex(idx + 1)
+
+    def habitacion_en_punto(self, x: float, y: float) -> int | None:
+        from matplotlib.path import Path
+
+        # La más pequeña que contenga el punto (prioridad a habitaciones internas)
+        candidatos: list[tuple[float, int]] = []
+        for i, hab in enumerate(self.session.planta_activa.habitaciones):
+            if len(hab.vertices) < 3:
+                continue
+            if Path(hab.vertices).contains_point((x, y)):
+                xs = [v[0] for v in hab.vertices]
+                ys = [v[1] for v in hab.vertices]
+                area = (max(xs) - min(xs)) * (max(ys) - min(ys))
+                candidatos.append((area, i))
+        if not candidatos:
+            return None
+        candidatos.sort()
+        return candidatos[0][1]
+
+    def menu_habitacion(self, idx: int) -> None:
+        from PyQt6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        menu.addAction("Editar habitación…", lambda: self.editar_habitacion(idx))
+        menu.addAction("Eliminar", lambda: self.eliminar_habitacion(idx))
+        menu.exec(self.mapToGlobal(self.rect().center()))
+
+    def editar_habitacion(self, idx: int) -> None:
+        hab = self.session.planta_activa.habitaciones[idx]
+        dlg = DialogoEditarHabitacion(hab, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        hab.nombre = dlg.resultado()
+        self.session.touch()
+        self.canvas.redraw()
+
+    def eliminar_habitacion(self, idx: int) -> None:
+        del self.session.planta_activa.habitaciones[idx]
+        self.session.touch()
+        self.canvas.redraw()
+
+    def limpiar_habitaciones(self) -> None:
+        floor = self.session.planta_activa
+        if not floor.habitaciones:
+            return
+        floor.habitaciones.clear()
+        self.session.touch()
+        self.canvas.redraw()
+
+    def etiquetas_habitaciones(self) -> dict[str, str]:
+        floor = self.session.planta_activa
+        if not floor.habitaciones or not floor.measurements:
+            return {}
+        from wifind.mapa_calor import interpolar_senal
+
+        ssid = self.ssid_combo.currentText()
+        pts = floor.measurements
+        if ssid:
+            pts = [m for m in pts if not m.ssid or m.ssid == ssid]
+        if not pts:
+            return {}
+        grid_x, grid_y, grid_z = interpolar_senal(
+            pts,
+            x_max=floor.x_max,
+            y_max=floor.y_max,
+            obstaculos=floor.obstaculos or None,
+        )
+        evals = evaluar_habitaciones_planta(floor, grid_x, grid_y, grid_z, self.prefs)
+        return {e.habitacion.id: e.etiqueta for e in evals}
+
+    def tipo_ap_cambiado(self) -> None:
+        tipo = self.tipo_ap_combo.currentData() or "ap"
+        actual = self.nombre_ap_edit.text().strip()
+        if not actual or actual in {nombre_por_defecto_ap(t) for t in TIPOS_PUNTO_ACCESO}:
+            self.nombre_ap_edit.setText(nombre_por_defecto_ap(tipo))
+
+    def colocar_ap_en(self, x: float, y: float) -> None:
+        tipo = self.tipo_ap_combo.currentData() or "ap"
+        nombre = self.nombre_ap_edit.text().strip() or nombre_por_defecto_ap(tipo)
+        floor = self.session.planta_activa
+        es_ref = False
+        if tipo == "router" and not any(a.es_referencia for a in floor.access_points):
+            es_ref = True
+        floor.access_points.append(
+            PuntoAcceso(x=x, y=y, tipo=tipo, nombre=nombre, es_referencia=es_ref)
+        )
+        self.session.touch()
+        # Salir del modo colocar para poder arrastrar de inmediato
+        self.modo_ap_btn.setChecked(False)
+        if es_ref:
+            self.mostrar_cobertura_router = True
+            self.router_coverage_check.blockSignals(True)
+            self.router_coverage_check.setChecked(True)
+            self.router_coverage_check.blockSignals(False)
+        self.canvas.redraw()
+
+    def ap_mas_cercano(self, x: float, y: float, threshold: float | None = None) -> int | None:
+        floor = self.session.planta_activa
+        if threshold is None:
+            # Área de agarre ~5 % del lado mayor (mín. 0.6 unidades de plano)
+            threshold = max(0.6, max(floor.x_max, floor.y_max) * 0.05)
+        best, best_d = None, threshold
+        for i, ap in enumerate(floor.access_points):
+            d = ((ap.x - x) ** 2 + (ap.y - y) ** 2) ** 0.5
+            if d < best_d:
+                best, best_d = i, d
+        return best
+
+    def menu_ap(self, idx: int) -> None:
+        from PyQt6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        menu.addAction("Editar AP…", lambda: self.editar_ap(idx))
+        menu.addAction(
+            "Usar como router de referencia",
+            lambda: self.marcar_router_referencia(idx),
+        )
+        menu.addAction("Eliminar", lambda: self.eliminar_ap(idx))
+        menu.exec(self.mapToGlobal(self.rect().center()))
+
+    def marcar_router_referencia(self, idx: int) -> None:
+        floor = self.session.planta_activa
+        for i, ap in enumerate(floor.access_points):
+            ap.es_referencia = i == idx
+            if i == idx:
+                ap.tipo = "router"
+        self.session.touch()
+        self.mostrar_cobertura_router = True
+        self.router_coverage_check.blockSignals(True)
+        self.router_coverage_check.setChecked(True)
+        self.router_coverage_check.blockSignals(False)
+        self.canvas.redraw()
+
+    def router_para_cobertura(self):
+        if not self.mostrar_cobertura_router:
+            return None
+        from wifind.servicios.narrativa_informe import router_de_referencia
+
+        return router_de_referencia(self.session.planta_activa)
+
+    def radios_router_para_dibujo(self) -> tuple[float, ...] | None:
+        if not self.mostrar_cobertura_router or self.router_para_cobertura() is None:
+            return None
+        base = max(self.radio_cobertura_m, 3.0)
+        return (base, base * 2, base * 3)
+
+    def alternar_cobertura_router(self, on: bool) -> None:
+        from wifind.servicios.narrativa_informe import router_de_referencia
+
+        if on and router_de_referencia(self.session.planta_activa) is None:
+            self.router_coverage_check.blockSignals(True)
+            self.router_coverage_check.setChecked(False)
+            self.router_coverage_check.blockSignals(False)
+            QMessageBox.information(
+                self,
+                "Cobertura respecto al router",
+                "Coloca un Router en el plano (Colocar AP → Router) o marca uno "
+                "existente con clic derecho → «Usar como router de referencia».\n\n"
+                "Si ya detectaste el gateway en Dispositivos, usa "
+                "«Colocar router en el mapa» allí.",
+            )
+            return
+        self.mostrar_cobertura_router = on
+        self.canvas.redraw()
+
+    def iniciar_colocacion_router(self, nombre: str = "Router") -> None:
+        """Activa el modo colocar AP como router de referencia (desde Dispositivos)."""
+        self.modo_ap_btn.setChecked(True)
+        idx = self.tipo_ap_combo.findData("router")
+        if idx >= 0:
+            self.tipo_ap_combo.setCurrentIndex(idx)
+        self.nombre_ap_edit.setText(nombre or "Router")
+        QMessageBox.information(
+            self,
+            "Colocar router",
+            f"Haz clic en el plano donde está «{nombre or 'Router'}».\n"
+            "Quedará marcado como referencia para la cobertura.",
+        )
+
+    def editar_ap(self, idx: int) -> None:
+        ap = self.session.planta_activa.access_points[idx]
+        dlg = DialogoEditarAP(ap, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        tipo, nombre = dlg.resultado()
+        ap.tipo = tipo
+        ap.nombre = nombre
+        self.session.touch()
+        self.canvas.redraw()
+
+    def eliminar_ap(self, idx: int) -> None:
+        del self.session.planta_activa.access_points[idx]
+        self.session.touch()
+        self.canvas.redraw()
+
+    def limpiar_aps(self) -> None:
+        floor = self.session.planta_activa
+        if not floor.access_points:
+            return
+        floor.access_points.clear()
+        self.session.touch()
+        self.canvas.redraw()
+
     def alternar_calibrar(self, on: bool) -> None:
         self.calibrate_mode = on
         if on:
             self.modo_pared = False
             self.modo_pared_btn.setChecked(False)
+            self.measure_mode = False
+            self.measure_dist_btn.setChecked(False)
+            self.modo_ap = False
+            self.modo_ap_btn.setChecked(False)
+            self.modo_habitacion = False
+            self.modo_habitacion_btn.setChecked(False)
             QMessageBox.information(
-                self, "Calibración",
-                "Dibuja una línea sobre una distancia conocida del plano.",
+                self,
+                "Calibración",
+                "Dibuja una línea sobre una distancia conocida del plano "
+                "(por ejemplo un pasillo de 8 metros) e indica su longitud real.",
             )
+
+    def alternar_medir_distancia(self, on: bool) -> None:
+        if on and not esta_calibrado(self.session.planta_activa.calibration):
+            self.measure_dist_btn.blockSignals(True)
+            self.measure_dist_btn.setChecked(False)
+            self.measure_dist_btn.blockSignals(False)
+            QMessageBox.information(
+                self,
+                "Medir distancia",
+                "Primero calibra el plano: dibuja una línea sobre una distancia "
+                "conocida (ej. 8 m) con «Calibrar plano».",
+            )
+            return
+        self.measure_mode = on
+        if on:
+            self.calibrate_mode = False
+            self.calibrate_btn.setChecked(False)
+            self.modo_pared = False
+            self.modo_pared_btn.setChecked(False)
+            self.modo_ap = False
+            self.modo_ap_btn.setChecked(False)
+            self.modo_habitacion = False
+            self.modo_habitacion_btn.setChecked(False)
+            self.measure_result_label.setText("Distancia: arrastra una línea…")
+        else:
+            self.canvas._measure_start = None
+            self.canvas._limpiar_preview_medida()
+            self.canvas.draw_idle()
+
+    def alternar_radio_cobertura(self, on: bool) -> None:
+        if on and not esta_calibrado(self.session.planta_activa.calibration):
+            self.radius_check.blockSignals(True)
+            self.radius_check.setChecked(False)
+            self.radius_check.blockSignals(False)
+            QMessageBox.information(
+                self,
+                "Radio de cobertura",
+                "Calibra el plano primero para mostrar radios en metros reales.",
+            )
+            return
+        self.mostrar_radio = on
+        self.canvas.redraw()
+
+    def radio_cobertura_cambiado(self, value: float) -> None:
+        self.radio_cobertura_m = self.prefs.a_metros(float(value))
+        if self.mostrar_radio:
+            self.canvas.redraw()
+
+    def actualizar_etiqueta_escala(self) -> None:
+        floor = self.session.planta_activa
+        cal = floor.calibration
+        if not esta_calibrado(cal):
+            self.scale_label.setText("Escala: sin calibrar")
+            self.measure_dist_btn.setEnabled(True)
+            return
+        largo = formatear_longitud(cal.real_length_m, self.prefs.units)
+        metricas = calcular_metricas_escala(floor)
+        ancho = formatear_longitud(metricas.ancho_m, self.prefs.units)
+        alto = formatear_longitud(metricas.alto_m, self.prefs.units)
+        self.scale_label.setText(
+            f"Escala: {largo} de referencia\n"
+            f"Planta ≈ {ancho} × {alto}"
+        )
 
     def alternar_recorrido(self, on: bool) -> None:
         if on:
@@ -756,14 +1532,54 @@ class PestanaMapaCalor(QWidget):
         floor = self.session.planta_activa
         if not floor.measurements:
             self.coverage_label.setText("")
+            self.rooms_label.setText("")
             return
-        _, _, grid_z = interpolar_senal(
+        grid_x, grid_y, grid_z = interpolar_senal(
             floor.measurements,
             x_max=floor.x_max,
             y_max=floor.y_max,
             obstaculos=floor.obstaculos or None,
         )
-        stats = calcular_estadisticas_cobertura(grid_z, floor.x_max, floor.y_max, self.prefs.threshold_fair)
-        self.coverage_label.setText(
-            f"Cobertura buena: {stats.porcentaje_bueno:.0f}% | Débil: {stats.porcentaje_debil:.0f}%"
+        stats = calcular_estadisticas_cobertura(
+            grid_z, floor.x_max, floor.y_max, self.prefs.threshold_fair
         )
+        metricas = calcular_metricas_escala(floor, stats)
+        unidades = self.prefs.units
+        lineas = [
+            f"Cobertura buena: {stats.porcentaje_bueno:.0f}% | "
+            f"Débil: {stats.porcentaje_debil:.0f}%"
+        ]
+        if metricas.calibrado:
+            lineas.append(
+                f"Superficie: {formatear_area(metricas.area_total_m2, unidades)}"
+            )
+            lineas.append(
+                f"Buena ≈ {formatear_area(metricas.area_buena_m2, unidades)} · "
+                f"Débil ≈ {formatear_area(metricas.area_debil_m2, unidades)}"
+            )
+            if metricas.densidad_puntos_por_m2 is not None:
+                dens = metricas.densidad_puntos_por_m2
+                if unidades == "ft":
+                    dens_ft = dens * (0.3048 ** 2)
+                    lineas.append(
+                        f"Densidad: {metricas.n_puntos} pts · {dens_ft:.3f} pts/ft²"
+                    )
+                else:
+                    lineas.append(
+                        f"Densidad: {metricas.n_puntos} pts · {dens:.3f} pts/m²"
+                    )
+        else:
+            lineas.append("Calibra el plano para ver m² y densidad.")
+        self.coverage_label.setText("\n".join(lineas))
+
+        if floor.habitaciones:
+            evals = evaluar_habitaciones_planta(
+                floor, grid_x, grid_y, grid_z, self.prefs
+            )
+            room_lines = ["Por habitación:"]
+            for ev in evals:
+                media = f" ({ev.media_dbm:.0f} dBm)" if ev.media_dbm is not None else ""
+                room_lines.append(f"• {ev.habitacion.nombre}: {ev.etiqueta}{media}")
+            self.rooms_label.setText("\n".join(room_lines))
+        else:
+            self.rooms_label.setText("")

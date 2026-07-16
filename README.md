@@ -16,14 +16,18 @@
 - **Conexión y desconexión WiFi** — Conectar a redes WPA/WPA2/WPA3 y abiertas desde el escáner; desconectar de la red activa; soporte 802.1X empresarial (PEAP, TTLS, TLS) con certificados; mensajes claros en español (sin salida técnica de `nmcli`/`netsh`)
 - **Intensidad en vivo** — Gráfico temporal de la señal recibida con alertas configurables
 - **Mapa de calor** — Mediciones sobre plano de planta con interpolación RBF (SciPy)
+- **Escala del plano** — Calibra con una distancia conocida («esta línea mide 8 m») para medir distancias, mostrar radios de cobertura, superficie en m² y densidad de puntos
+- **Marcadores de AP** — Coloca Router, AP o Repetidor sobre el plano con nombre visible
+- **Habitaciones** — Dibuja Salón, Dormitorio, Cocina… y el informe evalúa cada una (Excelente / Buena / Aceptable / Deficiente)
 - **Modelo de paredes** — Dibuja obstáculos (pladur, ladrillo, hormigón o atenuación personalizada) que afectan a la interpolación
 - **Multi-planta** — Varios pisos con planos, mediciones y paredes independientes
 - **Análisis de canales** — Histograma de saturación y recomendación de canal óptimo
 - **Dispositivos en la red** — Tras conectarte, escanea la LAN (ARP + ping) y muestra un diagrama con tarjetas coloreadas (router, este equipo, otros) con rol, nombre de host, IP y MAC; leyenda acorde a los colores del diagrama
 - **Sesiones `.wifind`** — Guardar y cargar proyectos completos
-- **Exportación** — PNG, PDF y CSV; informe HTML resumido
+- **Exportación** — PNG, PDF y CSV; informe HTML con resumen narrativo para el cliente
 - **Survey por waypoints** — Recorrido asistido con puntos de ruta
 - **Temas** — Interfaz clara u oscura
+- **Router de referencia** — Detecta el gateway en la LAN y permite mostrar la cobertura respecto a su posición en el plano
 
 ## Requisitos del sistema
 
@@ -72,10 +76,63 @@ python run_app.py
 4. En **Mapa de calor**:
    - Carga un plano: **Archivo → Cargar plano de planta**
    - Selecciona la red objetivo
+   - **Calibra el plano** (ver abajo) para trabajar en metros reales
    - Haz clic en el mapa para registrar mediciones
    - Usa **Shift + clic** para colocar waypoints de survey
 5. Guarda tu trabajo: **Archivo → Guardar sesión**
 6. Con conexión activa, abre **Dispositivos** para explorar la LAN o exporta el diagrama de topología
+
+### Escala del plano
+
+La calibración convierte píxeles del plano en metros (o pies) reales. Es la base para medir distancias, radios y superficies:
+
+1. Pulsa **Calibrar plano**
+2. Arrastra una línea sobre una distancia conocida (p. ej. un pasillo de **8 metros**)
+3. Indica la longitud real cuando se te pida
+4. A partir de ahí puedes:
+   - **Medir distancia**: arrastra una línea y verás la longitud en m/ft
+   - **Mostrar radio de cobertura**: círculos a N metros alrededor de cada punto medido
+   - Ver **superficie** (m² / ft²), cobertura buena/débil en área real y **densidad de puntos**
+
+Sin calibrar, el mapa sigue funcionando en coordenadas de plano; solo faltan las métricas físicas.
+
+### Marcadores de AP en el plano
+
+Puedes anotar dónde está cada equipo WiFi:
+
+1. Pulsa **Colocar AP**
+2. Elige el tipo (**Router**, **AP** o **Repetidor**) y un nombre (p. ej. «AP Oficina»)
+3. Haz **clic** en el plano para colocarlo
+4. **Clic derecho** sobre un marcador: editar o eliminar; arrástralo para moverlo
+
+Los marcadores se guardan en la sesión `.wifind` (`access_points` por planta) y aparecen también en exportaciones e informes.
+
+### Informe para el cliente
+
+**Archivo → Generar informe…** crea un HTML pensado para entregar a alguien que no interpreta mapas de calor:
+
+1. **Resumen** en lenguaje natural (redes detectadas, canal recomendado, % de cobertura, zonas deficientes, recomendaciones)
+2. Mapas por planta con habitaciones evaluadas
+3. Detalle técnico (tablas) al final
+
+Si el router está marcado en el plano, el resumen puede indicar la distancia a las zonas débiles.
+
+### Router y cobertura relativa
+
+1. En **Dispositivos**, el **gateway se identifica automáticamente como router**
+2. Pulsa **Colocar router en el mapa** y haz clic donde está físicamente
+3. Activa **Cobertura respecto al router** en el mapa de calor (círculos de distancia)
+4. Clic derecho en un AP → **Usar como router de referencia**
+
+### Habitaciones y cobertura por zona
+
+Puedes delimitar estancias sobre el plano y obtener una valoración por habitación:
+
+1. Pulsa **Dibujar habitaciones**
+2. Elige un nombre (Salón, Dormitorio, Cocina, Despacho…)
+3. **Arrastra** un rectángulo sobre la zona
+4. Con mediciones, cada habitación se clasifica como **Excelente**, **Buena**, **Aceptable** o **Deficiente** (según los umbrales de Preferencias)
+5. El **informe HTML** incluye un resumen por habitación
 
 ### Conexión y desconexión WiFi
 
@@ -216,6 +273,9 @@ wifind/
 │   ├── informe.py             # Informe HTML
 │   ├── analisis_canales.py    # Análisis RF por canal
 │   ├── cobertura.py           # Estadísticas de cobertura
+│   ├── escala_plano.py        # Escala px↔m, distancias, área y densidad
+│   ├── habitaciones.py        # Evaluación de cobertura por habitación
+│   ├── narrativa_informe.py   # Resumen ejecutivo en lenguaje natural
 │   ├── agrupacion_ap.py       # Agrupación de AP por SSID
 │   ├── descubrimiento_lan.py  # Escaneo ARP/ping de la LAN
 │   ├── credenciales_wifi.py   # Contraseñas WiFi recordadas
@@ -254,7 +314,7 @@ Cada planta (`floors[]`) incluye:
 
 - `measurements` — puntos medidos con coordenadas y señal en dBm
 - `obstaculos` — segmentos de pared con `material` y `atenuacion_db`
-- `waypoints`, `calibration`, `floor_plan_path`, etc.
+- `waypoints`, `calibration`, `access_points`, `habitaciones`, `floor_plan_path`, etc.
 
 ## Configuración
 

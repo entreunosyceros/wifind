@@ -20,7 +20,12 @@ from PyQt6.QtWidgets import (
     QFileDialog,
 )
 
-from wifind.modelos.dispositivo_red import ContextoLan, DispositivoRed, TipoDispositivo
+from wifind.modelos.dispositivo_red import (
+    ContextoLan,
+    DispositivoRed,
+    RolDispositivo,
+    TipoDispositivo,
+)
 from wifind.modelos.preferencias import PreferenciasApp
 from wifind.servicios.descubrimiento_lan import (
     descubrir_dispositivos,
@@ -63,6 +68,8 @@ class HiloDescubrimiento(QThread):
 
 
 class PestanaDispositivos(QWidget):
+    colocar_router_solicitado = pyqtSignal(str)
+
     def __init__(self, prefs: PreferenciasApp, parent=None) -> None:
         super().__init__(parent)
         self.prefs = prefs
@@ -75,7 +82,8 @@ class PestanaDispositivos(QWidget):
 
         intro = QLabel(
             "Explora los dispositivos en la misma red WiFi una vez conectado. "
-            "El diagrama muestra el router (centro), este equipo (abajo) y el resto alrededor. "
+            "El diagrama muestra el router/gateway (centro), este equipo (abajo) y el resto alrededor. "
+            "El gateway se marca automáticamente como router. "
             "Arrastra el fondo para mover la vista o un nodo para reorganizarlo."
         )
         intro.setWordWrap(True)
@@ -95,6 +103,11 @@ class PestanaDispositivos(QWidget):
         self.export_btn.clicked.connect(self.exportar_diagrama)
         self.export_btn.setEnabled(False)
         bar.addWidget(self.export_btn)
+
+        self.place_router_btn = QPushButton("Colocar router en el mapa")
+        self.place_router_btn.clicked.connect(self.solicitar_colocar_router)
+        self.place_router_btn.setEnabled(False)
+        bar.addWidget(self.place_router_btn)
 
         self.status_label = QLabel("")
         bar.addWidget(self.status_label, stretch=1)
@@ -136,12 +149,14 @@ class PestanaDispositivos(QWidget):
             self.context_label.setText(
                 f"<b>Red:</b> {ctx.ssid} — "
                 f"<b>IP:</b> {ctx.ip}/{ctx.prefix} — "
-                f"<b>Gateway:</b> {ctx.gateway or '—'}"
+                f"<b>Gateway / router:</b> {ctx.gateway or '—'}"
             )
+            self.place_router_btn.setEnabled(bool(ctx.gateway) or bool(self._dispositivos))
         else:
             self.context_label.setText(
                 "Conéctate a una red WiFi para explorar los dispositivos de la LAN."
             )
+            self.place_router_btn.setEnabled(False)
             if not self._dispositivos:
                 self.grafico.actualizar([], theme=self.prefs.theme)
 
@@ -196,6 +211,9 @@ class PestanaDispositivos(QWidget):
         self._ocultar_progreso()
         self.status_label.setText(f"{n} dispositivo(s) detectado(s).")
         self.export_btn.setEnabled(n > 0)
+        self.place_router_btn.setEnabled(
+            any(d.rol == RolDispositivo.GATEWAY or d.tipo == TipoDispositivo.ROUTER for d in dispositivos)
+        )
         if n == 0:
             QMessageBox.information(
                 self,
@@ -260,6 +278,28 @@ class PestanaDispositivos(QWidget):
             return
         exportar_figura_png(self.grafico.figura(), path, dpi=150)
         self.status_label.setText(f"Diagrama guardado: {path}")
+
+    @property
+    def dispositivos(self) -> list[DispositivoRed]:
+        return list(self._dispositivos)
+
+    def solicitar_colocar_router(self) -> None:
+        gateway = next(
+            (d for d in self._dispositivos if d.rol == RolDispositivo.GATEWAY),
+            None,
+        )
+        if gateway is None:
+            gateway = next(
+                (d for d in self._dispositivos if d.tipo == TipoDispositivo.ROUTER),
+                None,
+            )
+        if gateway is None and self._contexto and self._contexto.gateway:
+            nombre = f"Router ({self._contexto.gateway})"
+        elif gateway is not None:
+            nombre = gateway.hostname or f"Router ({gateway.ip})"
+        else:
+            nombre = "Router"
+        self.colocar_router_solicitado.emit(nombre)
 
     def refrescar_tema(self) -> None:
         if self._dispositivos and self._contexto:

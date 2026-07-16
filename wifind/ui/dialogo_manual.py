@@ -76,7 +76,21 @@ monitorizar la señal en tiempo real y generar mapas de calor de cobertura sobre
   <li><b>Clic izquierdo</b> en el mapa: registra una medición en ese punto con la señal de la red objetivo.</li>
   <li><b>Clic derecho</b> sobre un punto medido: eliminar o editar nota.</li>
   <li>Arrastra un punto para moverlo. <b>Deshacer</b> / <b>Rehacer</b> y <kbd>Ctrl+Z</kbd> deshacen mediciones.</li>
-  <li><b>Calibrar plano</b>: dibuja una línea sobre una distancia conocida para ajustar la escala.</li>
+  <li><b>Calibrar plano</b>: dibuja una línea sobre una distancia conocida
+      (p. ej. «esta línea mide 8 metros») para fijar la escala del plano.</li>
+  <li><b>Medir distancia</b> (requiere calibración): arrastra una línea y verás
+      la longitud en metros o pies.</li>
+  <li><b>Mostrar radio de cobertura</b>: círculos a N metros alrededor de cada
+      punto medido (radio configurable).</li>
+  <li>Con el plano calibrado, la etiqueta de cobertura muestra también
+      <b>superficie</b> (m²/ft²), área buena/débil y <b>densidad de puntos</b>.</li>
+  <li><b>Colocar AP</b>: marca Router, AP o Repetidor sobre el plano con un nombre
+      (p. ej. «AP Oficina»). Clic derecho para editar, eliminar o
+      <b>Usar como router de referencia</b>.</li>
+  <li><b>Cobertura respecto al router</b>: círculos de distancia alrededor del router de referencia.</li>
+  <li><b>Dibujar habitaciones</b>: arrastra un rectángulo (Salón, Dormitorio, Cocina…).
+      Con mediciones, cada zona se evalúa como Excelente / Buena / Aceptable / Deficiente
+      y aparece en el informe HTML.</li>
   <li><b>Shift + clic</b>: coloca waypoints de recorrido (survey).</li>
   <li>Varias plantas: botón <b>+ Piso</b>; cada planta tiene plano, mediciones y paredes propias.</li>
   <li>La barra lateral de colores (<i>Intensidad relativa</i>) aparece cuando hay mediciones:
@@ -105,6 +119,8 @@ monitorizar la señal en tiempo real y generar mapas de calor de cobertura sobre
   <li>Disponible cuando hay conexión WiFi activa con IP asignada.</li>
   <li><b>Escanear dispositivos</b> explora la LAN (tabla ARP/neighbor y ping a la subred).</li>
   <li>El <b>diagrama</b> colorea cada tarjeta según su tipo: router, este equipo, ordenador, Android, teléfono, tablet, Chromecast, cámara, IoT u otro.</li>
+  <li>El <b>gateway se identifica automáticamente como router</b> (centro del diagrama).</li>
+  <li><b>Colocar router en el mapa</b> salta al mapa de calor para marcar su posición física.</li>
   <li>La clasificación se infiere del <b>nombre de host</b> (DNS + mDNS), del fabricante por MAC (OUI) y, opcionalmente, de puertos clave.</li>
   <li>Los móviles <b>Android</b> suelen anunciarse como <code>Android_…</code> en mDNS; en Linux instala <code>avahi-utils</code>.</li>
   <li>Puedes ampliar el lookup OUI con <code>~/.config/wifind/oui.csv</code> (formato: <code>AA:BB:CC,Fabricante</code>).</li>
@@ -129,7 +145,9 @@ monitorizar la señal en tiempo real y generar mapas de calor de cobertura sobre
   <li><b>Exportar</b>: mapa de calor e intensidad (PNG/PDF), redes y mediciones (CSV).</li>
   <li><b>Redes escaneadas (CSV)</b> incluye SSID, BSSID, señal, canal, banda, cifrado detallado, tipo radio,
       velocidad anunciada, ancho de canal, red en uso, TX/RX, IP, gateway, DNS y marca temporal.</li>
-  <li><b>Generar informe</b>: resumen HTML con mapas embebidos y tabla de redes (en uso, cifrado, radio, rate).</li>
+  <li><b>Generar informe</b>: HTML para el cliente con <b>Resumen</b> narrativo
+      (redes, canal recomendado, cobertura, zonas deficientes y recomendaciones),
+      mapas por planta y detalle técnico al final.</li>
 </ul>
 <p>El icono en la <b>bandeja del sistema</b> ofrece el mismo menú Archivo con clic derecho;
   clic izquierdo restaura la ventana.</p>

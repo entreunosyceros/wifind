@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from wifind import __app_name__, __version__
-from wifind.modelos.medicion import Medicion, Obstaculo, PuntoRuta
+from wifind.modelos.medicion import Habitacion, Medicion, Obstaculo, PuntoAcceso, PuntoRuta
 from wifind.modelos.instantanea_escaneo import InstantaneaEscaneo
 
 
@@ -56,6 +56,8 @@ class NivelPlanta:
     measurements: list[Medicion] = field(default_factory=list)
     obstaculos: list[Obstaculo] = field(default_factory=list)
     waypoints: list[PuntoRuta] = field(default_factory=list)
+    access_points: list[PuntoAcceso] = field(default_factory=list)
+    habitaciones: list[Habitacion] = field(default_factory=list)
     calibration: CalibracionPlanta = field(default_factory=CalibracionPlanta)
     target_ssids: list[str] = field(default_factory=list)
 
@@ -70,6 +72,8 @@ class NivelPlanta:
             "measurements": [m.a_dict() for m in self.measurements],
             "obstaculos": [o.a_dict() for o in self.obstaculos],
             "waypoints": [w.a_dict() for w in self.waypoints],
+            "access_points": [ap.a_dict() for ap in self.access_points],
+            "habitaciones": [h.a_dict() for h in self.habitaciones],
             "calibration": self.calibration.a_dict(),
             "target_ssids": self.target_ssids,
         }
@@ -86,6 +90,8 @@ class NivelPlanta:
             measurements=[Medicion.desde_dict(m) for m in data.get("measurements", [])],
             obstaculos=[Obstaculo.desde_dict(o) for o in data.get("obstaculos", [])],
             waypoints=[PuntoRuta.desde_dict(w) for w in data.get("waypoints", [])],
+            access_points=[PuntoAcceso.desde_dict(a) for a in data.get("access_points", [])],
+            habitaciones=[Habitacion.desde_dict(h) for h in data.get("habitaciones", [])],
             calibration=CalibracionPlanta.desde_dict(data.get("calibration", {})),
             target_ssids=list(data.get("target_ssids", [])),
         )

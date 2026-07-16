@@ -9,7 +9,15 @@ from typing import Sequence
 import numpy as np
 from matplotlib.figure import Figure
 
-from wifind.modelos.medicion import Medicion, Obstaculo
+from wifind.modelos.medicion import (
+    Habitacion,
+    Medicion,
+    Obstaculo,
+    PuntoAcceso,
+    color_tipo_ap,
+    etiqueta_tipo_ap,
+    marcador_tipo_ap,
+)
 
 
 # Compatibilidad
@@ -106,6 +114,172 @@ def _dibujar_obstaculos(ax, obstaculos: Sequence[Obstaculo], zorder: int = 2) ->
             color="white",
             bbox={"facecolor": color, "alpha": 0.85, "edgecolor": "none", "pad": 1},
             zorder=zorder + 1,
+        )
+
+
+def _dibujar_puntos_acceso(
+    ax,
+    access_points: Sequence[PuntoAcceso],
+    theme: str = "dark",
+    zorder: int = 6,
+) -> None:
+    """Dibuja marcadores de router / AP / repetidor con etiqueta."""
+    if not access_points:
+        return
+    from wifind.ui.mpl_estilo import colores_tema
+
+    c = colores_tema(theme)
+    tipos_en_leyenda: set[str] = set()
+    for ap in access_points:
+        color = color_tipo_ap(ap.tipo)
+        marker = marcador_tipo_ap(ap.tipo)
+        label = etiqueta_tipo_ap(ap.tipo) if ap.tipo not in tipos_en_leyenda else None
+        tipos_en_leyenda.add(ap.tipo)
+        ax.scatter(
+            [ap.x],
+            [ap.y],
+            c=color,
+            s=160,
+            marker=marker,
+            edgecolors="white",
+            linewidths=1.2,
+            zorder=zorder,
+            label=label,
+        )
+        ax.annotate(
+            f"{ap.nombre}" + (" *" if getattr(ap, "es_referencia", False) else ""),
+            (ap.x, ap.y),
+            textcoords="offset points",
+            xytext=(0, 12),
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            fontweight="bold",
+            color=color,
+            bbox={
+                "facecolor": c["ax"],
+                "alpha": 0.88,
+                "edgecolor": color,
+                "boxstyle": "round,pad=0.25",
+                "linewidth": 1.0,
+            },
+            zorder=zorder + 1,
+        )
+
+
+def _dibujar_cobertura_respecto_router(
+    ax,
+    router: PuntoAcceso,
+    radios_m: Sequence[float],
+    cal,
+    units: str = "m",
+    zorder: int = 5,
+) -> None:
+    """Círculos concéntricos de distancia alrededor del router de referencia."""
+    from matplotlib.patches import Circle
+
+    from wifind.servicios.escala_plano import esta_calibrado, formatear_longitud, metros_a_px
+
+    if not esta_calibrado(cal):
+        for r in radios_m:
+            circ = Circle(
+                (router.x, router.y),
+                r,
+                fill=False,
+                edgecolor="#C62828",
+                linewidth=1.0,
+                linestyle=":",
+                alpha=0.55,
+                zorder=zorder,
+            )
+            ax.add_patch(circ)
+            ax.annotate(
+                f"{r:.0f}",
+                (router.x + r, router.y),
+                fontsize=7,
+                color="#C62828",
+                zorder=zorder + 1,
+            )
+        return
+
+    for r_m in radios_m:
+        r_px = metros_a_px(r_m, cal)
+        if r_px is None or r_px <= 0:
+            continue
+        circ = Circle(
+            (router.x, router.y),
+            r_px,
+            fill=False,
+            edgecolor="#C62828",
+            linewidth=1.2,
+            linestyle="--",
+            alpha=0.7,
+            zorder=zorder,
+        )
+        ax.add_patch(circ)
+        ax.annotate(
+            formatear_longitud(r_m, units),
+            (router.x + r_px * 0.7, router.y + r_px * 0.7),
+            fontsize=7,
+            color="#C62828",
+            fontweight="bold",
+            zorder=zorder + 1,
+        )
+
+
+def _dibujar_habitaciones(
+    ax,
+    habitaciones: Sequence[Habitacion],
+    etiquetas: dict[str, str] | None = None,
+    theme: str = "dark",
+    zorder: int = 2,
+) -> None:
+    """Dibuja zonas de habitación con relleno suave y nombre."""
+    if not habitaciones:
+        return
+    from matplotlib.patches import Polygon
+
+    from wifind.ui.mpl_estilo import colores_tema
+
+    c = colores_tema(theme)
+    etiquetas = etiquetas or {}
+    for hab in habitaciones:
+        if len(hab.vertices) < 3:
+            continue
+        poly = Polygon(
+            hab.vertices,
+            closed=True,
+            facecolor=hab.color,
+            edgecolor=hab.color,
+            linewidth=1.8,
+            alpha=0.18,
+            zorder=zorder,
+        )
+        ax.add_patch(poly)
+        xs = [v[0] for v in hab.vertices] + [hab.vertices[0][0]]
+        ys = [v[1] for v in hab.vertices] + [hab.vertices[0][1]]
+        ax.plot(xs, ys, color=hab.color, linewidth=1.5, alpha=0.85, zorder=zorder + 1)
+        cx, cy = hab.centro()
+        texto = hab.nombre
+        extra = etiquetas.get(hab.id)
+        if extra:
+            texto = f"{hab.nombre}\n{extra}"
+        ax.annotate(
+            texto,
+            (cx, cy),
+            ha="center",
+            va="center",
+            fontsize=8,
+            fontweight="bold",
+            color=c["text"],
+            bbox={
+                "facecolor": c["ax"],
+                "alpha": 0.75,
+                "edgecolor": hab.color,
+                "boxstyle": "round,pad=0.3",
+                "linewidth": 1.0,
+            },
+            zorder=zorder + 2,
         )
 
 
@@ -244,6 +418,12 @@ def dibujar_mapa_calor_en(
     waypoints: Sequence | None = None,
     calibration_line: tuple[float, float, float, float] | None = None,
     obstaculos: Sequence[Obstaculo] | None = None,
+    access_points: Sequence[PuntoAcceso] | None = None,
+    habitaciones: Sequence[Habitacion] | None = None,
+    etiquetas_habitacion: dict[str, str] | None = None,
+    router_referencia: PuntoAcceso | None = None,
+    radios_router_m: Sequence[float] | None = None,
+    calibracion=None,
     unit_suffix: str = " m",
     colormap: str = "RdYlGn",
     theme: str = "dark",
@@ -259,6 +439,8 @@ def dibujar_mapa_calor_en(
     )
 
     obstaculos = obstaculos or []
+    access_points = access_points or []
+    habitaciones = habitaciones or []
     c = colores_tema(theme)
     grid_x, grid_y, grid_z = interpolar_senal(
         points, x_max=x_max, y_max=y_max, obstaculos=obstaculos or None,
@@ -286,8 +468,13 @@ def dibujar_mapa_calor_en(
         x1, y1, x2, y2 = calibration_line
         ax.plot([x1, x2], [y1, y2], "b-", linewidth=2, zorder=2, label="Calibración")
 
+    if habitaciones:
+        _dibujar_habitaciones(
+            ax, habitaciones, etiquetas=etiquetas_habitacion, theme=theme, zorder=2
+        )
+
     if obstaculos:
-        _dibujar_obstaculos(ax, obstaculos, zorder=2)
+        _dibujar_obstaculos(ax, obstaculos, zorder=3)
 
     im = None
     if points:
@@ -382,6 +569,19 @@ def dibujar_mapa_calor_en(
                     color="blue",
                 )
 
+    if access_points:
+        _dibujar_puntos_acceso(ax, access_points, theme=theme)
+
+    if router_referencia is not None and radios_router_m and calibracion is not None:
+        units = "ft" if "ft" in unit_suffix.lower() else "m"
+        _dibujar_cobertura_respecto_router(
+            ax,
+            router_referencia,
+            radios_router_m,
+            calibracion,
+            units=units,
+        )
+
     ax.set_xlim(0, x_max)
     ax.set_ylim(0, y_max)
     ax.set_xlabel(f"X ({unit_suffix.strip()})")
@@ -397,7 +597,7 @@ def dibujar_mapa_calor_en(
     else:
         fig.subplots_adjust(left=0.10, right=0.97, top=0.92, bottom=0.10)
 
-    if calibration_line or waypoints:
+    if calibration_line or waypoints or access_points:
         legend = ax.legend(loc="upper right", fontsize=8)
         aplicar_tema_leyenda(legend, theme)
 
@@ -410,6 +610,8 @@ def dibujar_mapa_calor_comparacion_en(
     floor_plan_path: str | Path | None = None,
     obstaculos: Sequence[Obstaculo] | None = None,
     theme: str = "dark",
+    access_points: Sequence[PuntoAcceso] | None = None,
+    habitaciones: Sequence[Habitacion] | None = None,
 ) -> None:
     """Dibuja varios mapas de calor en subplots de una figura existente."""
     import matplotlib.image as mpimg
@@ -422,6 +624,8 @@ def dibujar_mapa_calor_comparacion_en(
     rows = (n + cols - 1) // cols
     c = colores_tema(theme)
     cmaps = ["RdYlGn", "viridis", "plasma", "cividis"]
+    access_points = access_points or []
+    habitaciones = habitaciones or []
 
     for idx, ssid in enumerate(ssids):
         ax = fig.add_subplot(rows, cols, idx + 1)
@@ -438,6 +642,8 @@ def dibujar_mapa_calor_comparacion_en(
                 )
             except Exception:
                 pass
+        if habitaciones:
+            _dibujar_habitaciones(ax, habitaciones, theme=theme, zorder=2)
         if obstaculos:
             _dibujar_obstaculos(ax, obstaculos, zorder=2)
         if pts:
@@ -446,6 +652,8 @@ def dibujar_mapa_calor_comparacion_en(
                 cmap=cmaps[idx % len(cmaps)], alpha=0.7, vmin=0, vmax=1,
             )
             ax.scatter([p.x for p in pts], [p.y for p in pts], c="black", s=30)
+        if access_points:
+            _dibujar_puntos_acceso(ax, access_points, theme=theme)
         ax.set_title(ssid)
         ax.set_xlim(0, x_max)
         ax.set_ylim(0, y_max)
@@ -473,6 +681,12 @@ def construir_figura_mapa_calor(
     unit_suffix: str = " m",
     colormap: str = "RdYlGn",
     theme: str = "dark",
+    access_points: Sequence[PuntoAcceso] | None = None,
+    habitaciones: Sequence[Habitacion] | None = None,
+    etiquetas_habitacion: dict[str, str] | None = None,
+    router_referencia: PuntoAcceso | None = None,
+    radios_router_m: Sequence[float] | None = None,
+    calibracion=None,
 ) -> Figure:
     from matplotlib.figure import Figure as MplFigure
 
@@ -491,6 +705,12 @@ def construir_figura_mapa_calor(
         waypoints=waypoints,
         calibration_line=calibration_line,
         obstaculos=obstaculos,
+        access_points=access_points,
+        habitaciones=habitaciones,
+        etiquetas_habitacion=etiquetas_habitacion,
+        router_referencia=router_referencia,
+        radios_router_m=radios_router_m,
+        calibracion=calibracion,
         unit_suffix=unit_suffix,
         colormap=colormap,
         theme=theme,

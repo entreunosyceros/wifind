@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMenuBar,
     QMessageBox,
+    QSizePolicy,
     QStatusBar,
     QSystemTrayIcon,
     QTabWidget,
@@ -85,6 +86,7 @@ class VentanaPrincipal(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"{__app_name__} — Mapa de calor WiFi")
         self.resize(1200, 780)
+        self.setMinimumSize(800, 520)
 
         self.prefs = PreferenciasApp.load()
         self.session = SesionApp.new()
@@ -121,7 +123,8 @@ class VentanaPrincipal(QMainWindow):
         root.addWidget(header)
 
         self.tabs = QTabWidget()
-        root.addWidget(self.tabs)
+        self.tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        root.addWidget(self.tabs, stretch=1)
 
         self.scanner_tab = PestanaEscaner(self.prefs)
         self.intensity_tab = PestanaIntensidad(self.session, self.prefs)
@@ -129,6 +132,7 @@ class VentanaPrincipal(QMainWindow):
         self.channels_tab = PestanaCanales(self.prefs)
         self.history_tab = PestanaHistorico(self.session, self.prefs)
         self.devices_tab = PestanaDispositivos(self.prefs)
+        self.devices_tab.colocar_router_solicitado.connect(self.colocar_router_en_mapa)
 
         self.tabs.addTab(self.scanner_tab, "Escáner WiFi")
         self.tabs.addTab(self.intensity_tab, "Intensidad en vivo")
@@ -314,6 +318,12 @@ class VentanaPrincipal(QMainWindow):
             floor.obstaculos,
             unit_suffix=self.prefs.sufijo_longitud(),
             theme=self.prefs.theme,
+            access_points=floor.access_points,
+            habitaciones=floor.habitaciones,
+            etiquetas_habitacion=self.heatmap_tab.etiquetas_habitaciones(),
+            router_referencia=self.heatmap_tab.router_para_cobertura(),
+            radios_router_m=self.heatmap_tab.radios_router_para_dibujo(),
+            calibracion=floor.calibration if self.heatmap_tab.mostrar_cobertura_router else None,
         )
         ext = fmt
         path, _ = QFileDialog.getSaveFileName(
@@ -368,8 +378,18 @@ class VentanaPrincipal(QMainWindow):
         )
         if not path:
             return
-        generar_informe_html(self.session, self._networks, self.prefs, path)
+        generar_informe_html(
+            self.session,
+            self._networks,
+            self.prefs,
+            path,
+            dispositivos=self.devices_tab.dispositivos,
+        )
         self.status.showMessage(f"Informe: {path}")
+
+    def colocar_router_en_mapa(self, nombre: str) -> None:
+        self.tabs.setCurrentWidget(self.heatmap_tab)
+        self.heatmap_tab.iniciar_colocacion_router(nombre)
 
     def nueva_sesion(self) -> None:
         if self.confirmar_descartar():
